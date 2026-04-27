@@ -1,6 +1,6 @@
-# KNX Gateway Skills
+# YCZNWL KNX Gateway Skills
 
-Agent skills for KNX Gateway — an open smart home gateway for KNX bus systems.
+Agent skills for YCZNWL KNX Gateway — an open smart home gateway for KNX bus systems.
 
 ## Installation
 

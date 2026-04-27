@@ -18,6 +18,7 @@ description: >-
 |-----------|---------|-------------|
 | Base URL  | `http://ycznwl.local/api/v1` | Default mDNS address — use as-is unless the user provides their own gateway address or IP |
 | Auth      | `Authorization: Bearer <token>` | See token instructions below |
+| Encoding  | `UTF-8` | The gateway accepts and emits UTF-8 only. Always send `Content-Type: application/json; charset=utf-8` and decode responses as UTF-8. Names, descriptions, room names, action names, and any free-text fields may contain Chinese characters and **must** be transmitted/parsed as UTF-8. Do not URL-encode JSON payloads or wrap them in an extra encoding layer. |
 
 ### Getting an API Token
 
@@ -39,16 +40,16 @@ need detailed information:
 |------|---------|
 | [ref/devices.md](ref/devices.md) | Device types, subtypes, capabilities, actions, params |
 | [ref/scenes.md](ref/scenes.md) | **Scene data model, actions structure, KNX binding, execution behavior** |
-| [ref/triggers.md](ref/triggers.md) | Trigger types and their exact configuration |
-| [ref/nodes.md](ref/nodes.md) | Node types, subtypes (incl. `scene_exec`), config structs, validation rules |
-| [ref/api.md](ref/api.md) | Complete REST API endpoint reference (devices, scenes, automation) |
+| [ref/triggers.md](ref/triggers.md) | Trigger types and their exact configuration (incl. `sun_event` with offset scheduling) |
+| [ref/nodes.md](ref/nodes.md) | Node types, subtypes (incl. `scene_exec`, `schedule_match` with sunrise/sunset boundaries), config structs, validation rules |
+| [ref/api.md](ref/api.md) | Complete REST API endpoint reference (devices, scenes, automation, system location/sun times) |
 | [ref/examples.md](ref/examples.md) | Realistic, validated workflow examples (incl. scene-based) |
 
 ## Quick Start — Agent Workflow
 
 ### Creating a new scene
 
-1. **Discover devices**: `GET /devices` → note `uuid`, `name`, `type`, `capabilities`
+1. **Discover devices**: `GET /devices` → note `uuid`, `name`, `type`, `capabilities`, and `room_id` (resolve via `GET /rooms`)
 2. **Build actions array**: Each action targets a device:
    ```json
    {
@@ -63,6 +64,25 @@ need detailed information:
    - `action` + `params` must match the device's capability (see [ref/devices.md](ref/devices.md))
    - `delay` is in milliseconds (0 = immediate, 500 = 0.5s delay before this action)
    - `id` is a unique string per action (e.g. `"a1"`, `"a2"`)
+
+#### Scene authoring best practices
+
+- **Brightness implies power on (dimmable lights only)**: For lights with brightness control
+  (`light_dimmer`, `light_tunable`, `light_rgb`), sending `set_brightness` with `brightness > 0`
+  automatically powers the light on at the firmware/handler level. **Do not emit a separate
+  `turn_on` action before `set_brightness`** — it adds latency and a redundant KNX telegram.
+  Sending `set_brightness` with `brightness: 0` will likewise turn the light off. Use an explicit
+  `turn_on` / `turn_off` only when the device has no brightness capability.
+- **Multi-room scenes — prefix `device_name` with the room name**: When a scene spans multiple
+  rooms, prepend the room name to the action's display name so the execution log and UI are
+  readable. Example: `"device_name": "客厅·主灯"` instead of just `"主灯"`. Single-room scenes
+  may keep the bare device name. The room name comes from `GET /rooms` joined on `device.room_id`.
+  This applies to both scene actions (`actions[].device_name`) and any `name` you set on
+  automation `device_control` / `scene_exec` action nodes.
+- **Color temperature range**: Devices can be configured for any range within `1000–10000 K`
+  with a configurable step. The backend clamps & step-aligns values automatically — but pass
+  reasonable values that the user has actually configured for the device.
+
 3. **Create**: `POST /scenes` with `name`, `actions`, optional `icon`, `color`, `description`, `enabled`
 4. **Test**: `POST /scenes/:uuid/execute` → verify execution result
 
@@ -112,6 +132,30 @@ See [ref/examples.md](ref/examples.md) Examples 7 & 8 for complete workflow payl
 4. **Import**: `POST /automation/workflows/import` → returns new workflow with server-generated UUIDs
 5. **Validate**: `POST /automation/workflows/:uuid/validate`
 6. **Enable**: `POST /automation/workflows/:uuid/enable`
+
+### Manually executing an automation — REQUIRES a manual trigger
+
+`POST /automation/workflows/:uuid/execute` can only fire **enabled** triggers of type
+`manual`. If the workflow has no manual trigger (e.g. only `device_event`, `cron`,
+`sun_event`, `knx_group_event`, or `webhook` triggers), the call returns
+`no enabled manual trigger found in workflow ...` and nothing executes.
+
+**Rule**: If the user wants the workflow to be runnable on demand from the UI or via the
+API (e.g. a "test" button, a chatbot command, a script), include at least one
+`{ "trigger_type": "manual", "enabled": true }` trigger in the import JSON. You may combine
+it with other triggers — they remain independent.
+
+```json
+{
+  "triggers": [
+    { "uuid": "t-manual", "trigger_type": "manual", "enabled": true, "config": {} },
+    { "uuid": "t-cron",   "trigger_type": "cron",   "enabled": true, "config": { "expression": "0 7 * * *" } }
+  ]
+}
+```
+
+A workflow without a manual trigger still runs automatically when its other triggers fire —
+it just cannot be invoked through `POST /workflows/:uuid/execute`.
 
 ### Editing an existing automation
 

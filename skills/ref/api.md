@@ -488,6 +488,33 @@ Cancels a running execution.
 
 ---
 
+## Sun Times Endpoints
+
+
+### Get Today's Sun Times
+
+```
+GET /system/sun-times
+```
+
+Query params:
+- `date` (string, optional) — Date in `YYYY-MM-DD` format. Default: today
+- `tz` (string, optional) — Timezone override (e.g. `"Asia/Shanghai"`)
+
+**Response**:
+```json
+{
+  "latitude": 31.2304,
+  "longitude": 121.4737,
+  "date": "2025-04-24",
+  "sunrise": "2025-04-24T05:23:00+08:00",
+  "sunset": "2025-04-24T18:31:00+08:00",
+  "timezone": "Asia/Shanghai"
+}
+```
+
+---
+
 ## Edge Format
 
 Edges connect triggers to nodes and nodes to nodes.
